@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ติดตามสถานะออเดอร์ — SSB</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  * { font-family: 'Sarabun', sans-serif; }
+  body { -webkit-tap-highlight-color: transparent; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  .rotate-90 { transform: rotate(90deg); }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .scrollbar-thin::-webkit-scrollbar { height: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #d6c9b4; border-radius: 4px; }
+</style>
+</head>
+<body class="min-h-screen w-full bg-gradient-to-br from-amber-50 via-stone-50 to-emerald-50">
+<div id="app" class="p-4 sm:p-6 max-w-3xl mx-auto space-y-5"></div>
+
+<div id="loading" class="fixed inset-0 bg-amber-50/90 flex flex-col items-center justify-center gap-3 z-50">
+  <svg class="spin" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.5">
+    <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+    <path d="M12 2a10 10 0 0 1 10 10"/>
+  </svg>
+  <p class="text-sm text-amber-700">กำลังโหลดข้อมูล...</p>
+</div>
+
+<script>
+// ============================================================
+// Deploy: บันทึกไฟล์นี้เป็น "order_tracker.html" ใน Apps Script project
+// (เพิ่มไฟล์ใหม่ใน Editor: + > HTML > ชื่อ "order_tracker")
+// เข้าผ่าน: ${GAS_URL}?page=tracker
+// → ตั้งเป็น Endpoint URL ของ LIFF ใหม่ใน LINE Developers Console
+// ============================================================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw4UvKuRrAQ_3Ldm8U0VJqfjfBQUSYaTEdrxkdXUVN98G68XseCquhDeXfMgU8cVYaY/exec';
+const LIFF_ID = '2010274217-KGSFWvpp'; // TODO: ใส่ LIFF ID ใหม่จาก LINE Developers Console (Endpoint URL = GAS_URL + "?page=tracker")
+
+// ====== Icons (inline SVG, lucide-style) ======
+const ICONS = {
+  clock: '<path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>',
+  check: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  truck: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  warehouse: '<path d="M22 8.35V20a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8.35a2 2 0 0 1 1.211-1.838l8-3.5a2 2 0 0 1 1.579 0l8 3.5A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73Z"/><path d="M12 22V12"/><path d="M3.3 7 12 12l8.7-5"/><path d="m7.5 4.27 9 5.15"/>',
+  phone: '<path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.832 1.62l-.46.353a1 1 0 0 0-.305 1.21 12.35 12.35 0 0 0 6.433 6.385"/>',
+};
+function icon(name, size = 16, extraClass = '') {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${extraClass}">${ICONS[name] || ''}</svg>`;
+}
+
+// ====== ลำดับสถานะหลัก (Admin) — ตรงกับคอลัมน์ "สถานะ" ใน STATUS ======
+const FLOW_STEPS = [
+  { key: "รอยืนยัน", label: "รอยืนยัน", icon: "clock" },
+  { key: "ยืนยันแล้ว", label: "ยืนยันแล้ว", icon: "check" },
+  { key: "รับงานแล้ว", label: "คนขับรับงาน", icon: "user" },
+  { key: "เริ่มงานแล้ว", label: "ออกเดินทาง", icon: "truck" },
+  { key: "ถึงลูกค้า", label: "ถึงหน้างาน", icon: "pin" },
+  { key: "เสร็จงาน", label: "จัดส่งสำเร็จ", icon: "home" },
+];
+
+// สถานะนอกขั้นตอนปกติ
+const EXCEPTION_STATUSES = {
+  "ยกเลิก": { label: "ยกเลิก", icon: "x", tone: "danger" },
+  "ไม่มีคนขับรับงาน": { label: "ไม่มีคนขับรับงาน", icon: "alert", tone: "warning" },
+  "รอคนขับรับงาน": { label: "รอคนขับรับงาน", icon: "clock", tone: "amber" },
+  "แจ้งเตือนแอดมิน": { label: "แจ้งเตือนแอดมิน", icon: "alert", tone: "warning" },
+  "ถึงลาน": { label: "ถึงลานเท", icon: "warehouse", tone: "amber" },
+};
+
+// ====== มุมมองเจ้าของสวน/ทีมตัด — ขั้นตอนแบบย่อ ======
+const CUSTOMER_FLOW_STEPS = [
+  { key: "รอยืนยัน", label: "รอยืนยัน", icon: "clock" },
+  { key: "รับออเดอร์แล้ว", label: "รับออเดอร์แล้ว", icon: "check" },
+  { key: "จัดหารถแล้ว", label: "จัดหารถแล้ว", icon: "user" },
+  { key: "ออกเดินทาง", label: "ออกเดินทาง", icon: "truck" },
+  { key: "ถึงหน้างาน", label: "ถึงหน้างาน", icon: "pin" },
+  { key: "จัดส่งสำเร็จ", label: "จัดส่งสำเร็จ", icon: "home" },
+];
+
+function toCustomerStatus(rawStatus) {
+  const map = {
+    "รอยืนยัน": "รอยืนยัน",
+    "ยืนยันแล้ว": "รับออเดอร์แล้ว",
+    "รอคนขับรับงาน": "รับออเดอร์แล้ว",
+    "ไม่มีคนขับรับงาน": "รับออเดอร์แล้ว",
+    "แจ้งเตือนแอดมิน": "รับออเดอร์แล้ว",
+    "รับงานแล้ว": "จัดหารถแล้ว",
+    "ถึงลาน": "จัดหารถแล้ว",
+    "เริ่มงานแล้ว": "ออกเดินทาง",
+    "ถึงลูกค้า": "ถึงหน้างาน",
+    "เสร็จงาน": "จัดส่งสำเร็จ",
+    "ยกเลิก": "ยกเลิก",
+  };
+  return map[rawStatus] || "รอยืนยัน";
+}
+
+function toCustomerTimestamps(ts = {}) {
+  return {
+    "รอยืนยัน": ts["รอยืนยัน"],
+    "รับออเดอร์แล้ว": ts["ยืนยันแล้ว"],
+    "จัดหารถแล้ว": ts["รับงานแล้ว"],
+    "ออกเดินทาง": ts["เริ่มงานแล้ว"],
+    "ถึงหน้างาน": ts["ถึงลูกค้า"],
+    "จัดส่งสำเร็จ": ts["เสร็จงาน"],
+  };
+}
+
+// ====== สีแถบหัวการ์ด ตามประเภทผู้สั่ง (เฉพาะมุมมอง Admin) ======
+const OWNER_TYPE_STYLES = {
+  Owner: { label: "เจ้าของสวน", bar: "bg-emerald-500", chip: "bg-emerald-100 text-emerald-800" },
+  Team:  { label: "ทีมตัด",     bar: "bg-orange-400",  chip: "bg-orange-100 text-orange-800" },
+  Ramp:  { label: "ลานเท",      bar: "bg-amber-700",   chip: "bg-amber-100 text-amber-900" },
+  Admin: { label: "แอดมิน",     bar: "bg-sky-300",     chip: "bg-sky-100 text-sky-800" },
+};
+
+function toneClasses(tone) {
+  switch (tone) {
+    case "danger":  return "bg-[#FCEBEB] text-[#791F1F] border-[#F09595]";
+    case "warning": return "bg-[#FAEEDA] text-[#633806] border-[#EF9F27]";
+    case "amber":   return "bg-[#FAEEDA] text-[#854F0B] border-[#FAC775]";
+    default:        return "bg-stone-100 text-stone-700 border-stone-300";
+  }
+}
+
+const DASHBOARD_STATUSES = [
+  { key: "รอยืนยัน", label: "รอยืนยัน", tone: "amber" },
+  { key: "ยืนยันแล้ว", label: "ยืนยันแล้ว", tone: "amber" },
+  { key: "รับงานแล้ว", label: "คนขับรับงาน", tone: "amber" },
+  { key: "เริ่มงานแล้ว", label: "ออกเดินทาง", tone: "amber" },
+  { key: "ถึงลูกค้า", label: "ถึงหน้างาน", tone: "amber" },
+  { key: "เสร็จงาน", label: "จัดส่งสำเร็จ", tone: "done" },
+  { key: "ไม่มีคนขับรับงาน", label: "ไม่มีคนขับรับงาน", tone: "warning" },
+  { key: "ยกเลิก", label: "ยกเลิก", tone: "danger" },
+];
+
+const CUSTOMER_DASHBOARD_STATUSES = [
+  { key: "รอยืนยัน", label: "รอยืนยัน", tone: "amber" },
+  { key: "รับออเดอร์แล้ว", label: "รับออเดอร์แล้ว", tone: "amber" },
+  { key: "จัดหารถแล้ว", label: "จัดหารถแล้ว", tone: "amber" },
+  { key: "ออกเดินทาง", label: "ออกเดินทาง", tone: "amber" },
+  { key: "ถึงหน้างาน", label: "ถึงหน้างาน", tone: "amber" },
+  { key: "จัดส่งสำเร็จ", label: "จัดส่งสำเร็จ", tone: "done" },
+  { key: "ยกเลิก", label: "ยกเลิก", tone: "danger" },
+];
+
+const FILTER_CHIPS = [
+  { key: "ทั้งหมด", label: "ทั้งหมด" },
+  ...FLOW_STEPS.map(s => ({ key: s.key, label: s.label })),
+  { key: "ไม่มีคนขับรับงาน", label: "ไม่มีคนขับรับงาน" },
+  { key: "ยกเลิก", label: "ยกเลิก" },
+];
+
+const CUSTOMER_FILTER_CHIPS = [
+  { key: "ทั้งหมด", label: "ทั้งหมด" },
+  ...CUSTOMER_FLOW_STEPS.map(s => ({ key: s.key, label: s.label })),
+  { key: "ยกเลิก", label: "ยกเลิก" },
+];
+
+const OWNER_TYPE_ORDER = ["Owner", "Team", "Ramp", "Admin"];
+
+// ====== State ======
+let ALL_ORDERS = [];
+let CURRENT_ROLE = '';
+let FILTER_STATUS = "ทั้งหมด";
+let FILTER_OWNER_TYPE = null;
+let EXPANDED_IDS = new Set();
+
+// ====== Render helpers ======
+
+function renderToneCard(tone) {
+  switch (tone) {
+    case "done":    return "bg-emerald-50 border-emerald-200 text-emerald-900";
+    case "danger":  return "bg-[#FCEBEB] border-[#F09595] text-[#791F1F]";
+    case "warning": return "bg-[#FAEEDA] border-[#EF9F27] text-[#633806]";
+    default:        return "bg-amber-50 border-amber-200 text-amber-900";
+  }
+}
+
+function statusBadgeHtml(status) {
+  const exception = EXCEPTION_STATUSES[status];
+  if (exception) {
+    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${toneClasses(exception.tone)}">${icon(exception.icon, 13)}${exception.label}</span>`;
+  }
+  const idx = FLOW_STEPS.findIndex(s => s.key === status);
+  const isDone = idx === FLOW_STEPS.length - 1;
+  const isStart = idx <= 0;
+  const cls = isDone ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+            : isStart ? "bg-amber-50 text-amber-800 border-amber-300"
+            : "bg-amber-100 text-amber-900 border-amber-400";
+  const label = FLOW_STEPS[idx] ? FLOW_STEPS[idx].label : status;
+  return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${cls}">${icon(isDone ? "check" : "clock", 13)}${label}</span>`;
+}
+
+function customerStatusBadgeHtml(rawStatus) {
+  const custStatus = toCustomerStatus(rawStatus);
+  if (custStatus === "ยกเลิก") {
+    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${toneClasses("danger")}">${icon("x", 13)}ยกเลิก</span>`;
+  }
+  const idx = CUSTOMER_FLOW_STEPS.findIndex(s => s.key === custStatus);
+  const isDone = idx === CUSTOMER_FLOW_STEPS.length - 1;
+  const isStart = idx <= 0;
+  const cls = isDone ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+            : isStart ? "bg-amber-50 text-amber-800 border-amber-300"
+            : "bg-amber-100 text-amber-900 border-amber-400";
+  const label = CUSTOMER_FLOW_STEPS[idx] ? CUSTOMER_FLOW_STEPS[idx].label : custStatus;
+  return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${cls}">${icon(isDone ? "check" : "clock", 13)}${label}</span>`;
+}
+
+function timelineHtml(status, timestamps, steps, cancelReason) {
+  timestamps = timestamps || {};
+  const isCancelled = status === "ยกเลิก";
+  const exception = EXCEPTION_STATUSES[status];
+  let currentIdx = steps.findIndex(s => s.key === status);
+  const effectiveIdx = currentIdx === -1 ? 0 : currentIdx;
+
+  let stepsHtml = steps.map((step, idx) => {
+    const done = idx <= effectiveIdx && currentIdx !== -1;
+    const isLast = idx === steps.length - 1;
+    const ts = timestamps[step.key];
+    const circleCls = done ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-amber-200 text-amber-400";
+    const labelCls  = done ? "text-emerald-800" : "text-amber-700/60";
+    const connectorCls = (idx < effectiveIdx && currentIdx !== -1) ? "bg-emerald-500" : "bg-amber-200";
+    return `
+      <div class="flex items-start min-w-fit">
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="flex items-center justify-center w-9 h-9 rounded-full border-2 transition-colors ${circleCls}">${icon(step.icon, 16)}</div>
+          <span class="text-[11px] font-medium text-center w-20 leading-tight ${labelCls}">${step.label}</span>
+          <span class="text-[10px] text-amber-600/70 text-center w-20 leading-tight tabular-nums">${ts || "—"}</span>
+        </div>
+        ${!isLast ? `<div class="h-0.5 w-10 sm:w-16 mx-1 mt-[18px] rounded transition-colors ${connectorCls}"></div>` : ''}
+      </div>`;
+  }).join('');
+
+  let footerHtml = '';
+  if (isCancelled) {
+    footerHtml = `
+      <div class="flex items-start gap-2 text-xs font-medium px-3 py-2 rounded-xl border ${toneClasses("danger")}">
+        ${icon("x", 14, "mt-0.5 shrink-0")}
+        <span>ออเดอร์นี้ถูกยกเลิกแล้ว${cancelReason ? `<span class="block font-normal mt-0.5 opacity-90">เหตุผล: ${escapeHtml(cancelReason)}</span>` : ''}</span>
+      </div>`;
+  } else if (exception) {
+    const msg = exception.label === "ถึงลานเท" ? "คนขับแวะลานเทก่อนไปจุดต่อไป" : "งานนี้ต้องการความช่วยเหลือจาก Admin";
+    footerHtml = `
+      <div class="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-xl border ${toneClasses(exception.tone)}">
+        ${icon(exception.icon, 14)}${msg}
+      </div>`;
+  }
+
+  return `
+    <div class="space-y-2">
+      <div class="flex items-start w-full overflow-x-auto pb-2 scrollbar-thin">${stepsHtml}</div>
+      ${footerHtml}
+    </div>`;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function orderCardHtml(order, idx, isAdmin) {
+  const expanded = EXPANDED_IDS.has(order.orderId);
+  const ownerStyle = OWNER_TYPE_STYLES[order.ownerType];
+  const custStatus = toCustomerStatus(order.status);
+
+  let barHtml = '';
+  let chipHtml = '';
+  if (isAdmin && ownerStyle) {
+    barHtml = `<div class="h-1.5 w-full ${ownerStyle.bar}"></div>`;
+    chipHtml = `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${ownerStyle.chip}">${ownerStyle.label}</span>`;
+  }
+
+  const badgeHtml = isAdmin ? statusBadgeHtml(order.status) : customerStatusBadgeHtml(order.status);
+
+  let detailHtml = '';
+  if (expanded) {
+    let tlHtml;
+    if (isAdmin) {
+      tlHtml = timelineHtml(order.status, order.timestamps, FLOW_STEPS, order.cancelReason);
+    } else {
+      tlHtml = timelineHtml(custStatus, toCustomerTimestamps(order.timestamps), CUSTOMER_FLOW_STEPS, order.cancelReason);
+    }
+
+    const showDriver = order.driverName && custStatus !== "ยกเลิก" &&
+      (custStatus === "จัดหารถแล้ว" || custStatus === "ออกเดินทาง" || custStatus === "ถึงหน้างาน" || custStatus === "จัดส่งสำเร็จ" || isAdmin);
+
+    let driverHtml = '';
+    if (showDriver) {
+      driverHtml = `
+        <div class="flex items-center justify-between gap-2 text-sm bg-white border border-amber-200 rounded-xl px-3 py-2 text-emerald-900">
+          <span>${icon("truck", 14, "inline -mt-0.5 mr-1.5")}คนขับ: ${escapeHtml(order.driverName)} · ทะเบียน ${escapeHtml(order.plate || '')}</span>
+          ${order.driverPhone ? `<a href="tel:${escapeHtml(order.driverPhone)}" onclick="event.stopPropagation()" class="flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors">${icon("phone", 12)}${escapeHtml(order.driverPhone)}</a>` : ''}
+        </div>`;
+    }
+
+    let rampHtml = '';
+    if (isAdmin && order.rampInfo) {
+      rampHtml = `
+        <p class="text-sm bg-white border border-amber-200 rounded-xl px-3 py-2 text-amber-900">
+          ${icon("warehouse", 14, "inline -mt-0.5 mr-1.5")}${escapeHtml(order.rampInfo)}
+        </p>`;
+    }
+
+    detailHtml = `
+      <div class="px-4 pb-4 border-t border-amber-100 pt-3 space-y-3 bg-amber-50/40">
+        ${tlHtml}
+        <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-emerald-800/80">
+          <span><span class="font-medium text-emerald-900">วันที่:</span> ${escapeHtml(order.date || '')} ${escapeHtml(order.time || '')}</span>
+          <span><span class="font-medium text-emerald-900">จุดรับ:</span> ${escapeHtml(order.pickup || "—")}</span>
+          <span><span class="font-medium text-emerald-900">จำนวนกระบะ:</span> ${escapeHtml(String(order.binCount || 1))} ใบ</span>
+        </div>
+        ${driverHtml}
+        ${rampHtml}
+      </div>`;
+  }
+
+  return `
+    <div class="bg-white rounded-2xl border border-amber-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+      ${barHtml}
+      <button onclick="toggleOrder('${escapeHtml(order.orderId)}')" class="w-full flex items-center justify-between gap-3 p-4 text-left">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 shrink-0">${icon("package", 20)}</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="font-semibold text-emerald-900 truncate">${escapeHtml(order.orderId)}</p>
+              ${chipHtml}
+            </div>
+            <p class="text-sm text-amber-700/80 truncate">${escapeHtml(order.gardenName || '')}${order.billName ? ` · ${escapeHtml(order.billName)}` : ""}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          ${badgeHtml}
+          ${icon("chevron", 18, `text-amber-400 transition-transform ${expanded ? "rotate-90" : ""}`)}
+        </div>
+      </button>
+      ${detailHtml}
+    </div>`;
+}
+
+function toggleOrder(orderId) {
+  if (EXPANDED_IDS.has(orderId)) EXPANDED_IDS.delete(orderId);
+  else EXPANDED_IDS.add(orderId);
+  render();
+}
+
+function dashboardHtml(orders, statuses, getKey) {
+  const counts = {};
+  statuses.forEach(s => counts[s.key] = 0);
+  orders.forEach(o => {
+    const k = getKey(o);
+    if (counts[k] !== undefined) counts[k]++;
+  });
+
+  return `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    ${statuses.map(s => {
+      const active = FILTER_STATUS === s.key;
+      return `
+        <button onclick="selectStatus('${escapeHtml(s.key)}')" class="text-left rounded-2xl border p-3 transition-all ${renderToneCard(s.tone)} ${active ? "ring-2 ring-emerald-500 ring-offset-1" : "hover:shadow-sm"}">
+          <p class="text-2xl font-bold leading-none">${counts[s.key]}</p>
+          <p class="text-xs font-medium mt-1.5 leading-tight">${escapeHtml(s.label)}</p>
+        </button>`;
+    }).join('')}
+  </div>`;
+}
+
+function ownerTypeDashboardHtml(orders) {
+  const counts = { Owner: 0, Team: 0, Ramp: 0, Admin: 0 };
+  orders.forEach(o => { if (counts[o.ownerType] !== undefined) counts[o.ownerType]++; });
+
+  const allActive = FILTER_OWNER_TYPE === null;
+  let html = `<div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <button onclick="selectOwnerType(null)" class="text-left rounded-2xl border border-amber-200 bg-white p-3 transition-all overflow-hidden ${allActive ? "ring-2 ring-emerald-500 ring-offset-1" : "hover:shadow-sm"}">
+      <div class="h-1.5 w-full rounded-full mb-2 bg-amber-300"></div>
+      <p class="text-2xl font-bold leading-none text-emerald-900">${orders.length}</p>
+      <p class="text-xs font-medium mt-1.5 leading-tight text-amber-700/80">ทั้งหมด</p>
+    </button>`;
+
+  OWNER_TYPE_ORDER.forEach(key => {
+    const style = OWNER_TYPE_STYLES[key];
+    const active = FILTER_OWNER_TYPE === key;
+    html += `
+      <button onclick="selectOwnerType('${key}')" class="text-left rounded-2xl border border-amber-200 bg-white p-3 transition-all overflow-hidden ${active ? "ring-2 ring-emerald-500 ring-offset-1" : "hover:shadow-sm"}">
+        <div class="h-1.5 w-full rounded-full mb-2 ${style.bar}"></div>
+        <p class="text-2xl font-bold leading-none text-emerald-900">${counts[key]}</p>
+        <p class="text-xs font-medium mt-1.5 leading-tight text-amber-700/80">${style.label}</p>
+      </button>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+function filterChipsHtml(chips) {
+  return `<div class="flex flex-wrap gap-2 overflow-x-auto pb-1 scrollbar-thin">
+    ${chips.map(c => {
+      const active = FILTER_STATUS === c.key;
+      const cls = active ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-amber-200 text-emerald-800 hover:bg-amber-50";
+      return `<button onclick="selectStatus('${escapeHtml(c.key)}')" class="px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors whitespace-nowrap ${cls}">${escapeHtml(c.label)}</button>`;
+    }).join('')}
+  </div>`;
+}
+
+function selectStatus(key) {
+  FILTER_STATUS = (FILTER_STATUS === key) ? "ทั้งหมด" : key;
+  render();
+}
+
+function selectOwnerType(key) {
+  FILTER_OWNER_TYPE = (FILTER_OWNER_TYPE === key || key === null) ? null : key;
+  render();
+}
+
+// ====== Main render ======
+function render() {
+  const isAdmin = CURRENT_ROLE === 'Admin';
+
+  let orders = ALL_ORDERS;
+  if (FILTER_STATUS !== "ทั้งหมด") {
+    if (isAdmin) {
+      orders = orders.filter(o => o.status === FILTER_STATUS);
+    } else {
+      orders = orders.filter(o => toCustomerStatus(o.status) === FILTER_STATUS);
+    }
+  }
+  if (FILTER_OWNER_TYPE) {
+    orders = orders.filter(o => o.ownerType === FILTER_OWNER_TYPE);
+  }
+
+  const roleLabel = { Owner: 'เจ้าของสวน', Team: 'ทีมตัด', Ramp: 'ลานเท', Admin: 'แอดมิน' }[CURRENT_ROLE] || CURRENT_ROLE;
+
+  let html = '';
+
+  // Header
+  html += `
+    <div class="bg-gradient-to-r from-emerald-700 to-emerald-600 rounded-2xl p-5 shadow-lg text-white">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">${icon("truck", 24)}ติดตามสถานะออเดอร์</h1>
+          <p class="text-emerald-100 text-sm mt-1">SSB Smart Supply · ${escapeHtml(roleLabel)}</p>
+        </div>
+        <button onclick="loadOrders(true)" id="refresh-btn" class="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 text-sm font-medium">
+          ${icon("refresh", 16, "refresh-icon")}อัปเดตข้อมูล
+        </button>
+      </div>
+    </div>`;
+
+  // Owner type dashboard (Admin only)
+  if (isAdmin) {
+    html += `
+      <div class="space-y-2">
+        <p class="text-sm font-semibold text-emerald-900 px-1">ออเดอร์แยกตามผู้สั่ง</p>
+        ${ownerTypeDashboardHtml(ALL_ORDERS)}
+      </div>`;
+  }
+
+  // Status dashboard
+  html += `
+    <div class="space-y-2">
+      <p class="text-sm font-semibold text-emerald-900 px-1">สรุปสถานะ</p>
+      ${isAdmin
+        ? dashboardHtml(ALL_ORDERS, DASHBOARD_STATUSES, o => o.status)
+        : dashboardHtml(ALL_ORDERS, CUSTOMER_DASHBOARD_STATUSES, o => toCustomerStatus(o.status))}
+    </div>`;
+
+  // Filter chips
+  html += `
+    <div class="space-y-2">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <p class="text-sm text-emerald-900 font-medium">
+          แสดง ${orders.length} ออเดอร์
+          ${!isAdmin ? `<span class="text-amber-700"> · เฉพาะของคุณ</span>` : ''}
+          ${FILTER_OWNER_TYPE ? `<span class="text-amber-700"> · ${OWNER_TYPE_STYLES[FILTER_OWNER_TYPE].label}</span>` : ''}
+        </p>
+      </div>
+      ${filterChipsHtml(isAdmin ? FILTER_CHIPS : CUSTOMER_FILTER_CHIPS)}
+    </div>`;
+
+  // Orders list
+  html += `<div class="space-y-3">`;
+  if (orders.length === 0) {
+    html += `<div class="bg-white rounded-2xl border border-amber-200 p-8 text-center text-amber-600">ไม่มีออเดอร์ในสถานะนี้</div>`;
+  } else {
+    orders.forEach((o, idx) => { html += orderCardHtml(o, idx, isAdmin); });
+  }
+  html += `</div>`;
+
+  // Footer
+  html += `
+    <div class="text-center text-xs text-emerald-700/60 pt-2 pb-4">
+      ข้อมูลจาก Google Sheet "STATUS" ผ่าน Apps Script API · อัปเดตล่าสุดอัตโนมัติ
+    </div>`;
+
+  document.getElementById('app').innerHTML = html;
+}
+
+// ====== LIFF init + data loading ======
+async function init() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    window._userId = profile.userId;
+    await loadOrders(false);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('loading').innerHTML = `<p class="text-sm text-red-600 px-6 text-center">โหลดไม่สำเร็จ: ${escapeHtml(e.message || String(e))}</p>`;
+  }
+}
+
+async function loadOrders(isRefresh) {
+  const btn = document.getElementById('refresh-btn');
+  if (isRefresh && btn) btn.querySelector('.refresh-icon').classList.add('spin');
+
+  try {
+    const res = await fetch(`${GAS_URL}?action=getOrderTracker&userId=${window._userId}`);
+    const data = await res.json();
+
+    if (!data.success) {
+      document.getElementById('app').innerHTML = `<div class="bg-white rounded-2xl border border-amber-200 p-8 text-center text-amber-700 mt-6">${escapeHtml(data.error || 'เกิดข้อผิดพลาด')}</div>`;
+      document.getElementById('loading').style.display = 'none';
+      return;
+    }
+
+    ALL_ORDERS = data.orders || [];
+    CURRENT_ROLE = data.role;
+    render();
+    document.getElementById('loading').style.display = 'none';
+  } catch (e) {
+    console.error(e);
+    if (!isRefresh) {
+      document.getElementById('loading').innerHTML = `<p class="text-sm text-red-600 px-6 text-center">เชื่อมต่อไม่ได้</p>`;
+    }
+  } finally {
+    if (isRefresh && btn) setTimeout(() => btn.querySelector('.refresh-icon').classList.remove('spin'), 400);
+  }
+}
+
+init();
+
+
+
+
+</script>
+
+</body>
+</html>
