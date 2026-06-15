@@ -151,6 +151,16 @@ let FILTER_STATUS = "ทั้งหมด";
 let FILTER_OWNER_TYPE = null;
 let EXPANDED_IDS = new Set();
 
+// วันที่วันนี้ในรูปแบบ yyyy-MM-dd (ตาม timezone เครื่องผู้ใช้)
+function todayStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+let FILTER_DATE = todayStr(); // default = วันนี้, '' = ทั้งหมด
+
 function renderToneCard(tone) {
   switch (tone) {
     case "done":    return "bg-emerald-50 border-emerald-200 text-emerald-900";
@@ -395,11 +405,34 @@ function selectOwnerType(key) {
   render();
 }
 
+function selectDate(val) {
+  FILTER_DATE = (val === 'today') ? todayStr() : val; // '' = ทั้งหมด
+  render();
+}
+
+function dateLabelHtml() {
+  if (!FILTER_DATE) return '';
+  const label = (FILTER_DATE === todayStr()) ? 'วันนี้' : formatDateDMY(FILTER_DATE);
+  return ` <span class="text-amber-700">· ${escapeHtml(label)}</span>`;
+}
+
+// แปลง "yyyy-MM-dd" → "dd-MM-yyyy"
+function formatDateDMY(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return escapeHtml(dateStr);
+  const [y, m, d] = parts;
+  return `${d}-${m}-${y}`;
+}
+
 // ====== Main render ======
 function render() {
   const isAdmin = CURRENT_ROLE === 'Admin';
 
   let orders = ALL_ORDERS;
+  if (FILTER_DATE) {
+    orders = orders.filter(o => o.date === FILTER_DATE);
+  }
   if (isAdmin && FILTER_STATUS !== "ทั้งหมด") {
     orders = orders.filter(o => o.status === FILTER_STATUS);
   }
@@ -424,24 +457,41 @@ function render() {
       </div>
     </div>`;
 
+  // ── ตัวเลือกวันที่ ──────────────────────────────────────
+  html += `
+    <div class="flex items-center gap-2 flex-wrap">
+      <input type="date" value="${escapeHtml(FILTER_DATE || todayStr())}"
+        oninput="selectDate(this.value)"
+        class="px-3 py-2 rounded-xl text-sm font-medium border bg-white border-amber-200 text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-400 ${FILTER_DATE ? '' : 'opacity-50'}" />
+      <button onclick="selectDate('today')" class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${FILTER_DATE === todayStr() ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-amber-200 text-emerald-800 hover:bg-amber-50"}">
+        วันนี้
+      </button>
+      <button onclick="selectDate('')" class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${!FILTER_DATE ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-amber-200 text-emerald-800 hover:bg-amber-50"}">
+        ทั้งหมด
+      </button>
+    </div>`;
+
+  // ออเดอร์ตามวันที่เลือก (ก่อน filter สถานะ/ผู้สั่ง) — ใช้สำหรับนับในแดชบอร์ด
+  const dateFilteredOrders = FILTER_DATE ? ALL_ORDERS.filter(o => o.date === FILTER_DATE) : ALL_ORDERS;
+
   if (isAdmin) {
     html += `
       <div class="space-y-2">
         <p class="text-sm font-semibold text-emerald-900 px-1">ออเดอร์แยกตามผู้สั่ง</p>
-        ${ownerTypeDashboardHtml(ALL_ORDERS)}
+        ${ownerTypeDashboardHtml(dateFilteredOrders)}
       </div>`;
 
     html += `
       <div class="space-y-2">
         <p class="text-sm font-semibold text-emerald-900 px-1">สรุปสถานะ</p>
-        ${dashboardHtml(ALL_ORDERS, DASHBOARD_STATUSES, o => o.status)}
+        ${dashboardHtml(dateFilteredOrders, DASHBOARD_STATUSES, o => o.status)}
       </div>`;
 
     html += `
       <div class="space-y-2">
         <div class="flex items-center justify-between flex-wrap gap-3">
           <p class="text-sm text-emerald-900 font-medium">
-            แสดง ${orders.length} ออเดอร์
+            แสดง ${orders.length} ออเดอร์${dateLabelHtml()}
             ${FILTER_OWNER_TYPE ? `<span class="text-amber-700"> · ${OWNER_TYPE_STYLES[FILTER_OWNER_TYPE].label}</span>` : ''}
           </p>
         </div>
@@ -450,7 +500,7 @@ function render() {
   } else {
     html += `
       <p class="text-sm text-emerald-900 font-medium px-1">
-        แสดง ${orders.length} ออเดอร์<span class="text-amber-700"> · เฉพาะของคุณ</span>
+        แสดง ${orders.length} ออเดอร์${dateLabelHtml()}<span class="text-amber-700"> · เฉพาะของคุณ</span>
       </p>`;
   }
 
