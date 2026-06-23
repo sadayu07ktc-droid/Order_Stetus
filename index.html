@@ -257,6 +257,28 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ── ปุ่มตอบแทนลานเท — เฉพาะ Admin และออเดอร์สถานะ "แจ้งเตือนแอดมิน" ──
+function rampApproveHtml(order, isAdmin) {
+  if (!isAdmin || order.status !== 'แจ้งเตือนแอดมิน') return '';
+  const oid = escapeHtml(order.orderId);
+  return `
+    <div class="ramp-approve bg-white border border-amber-300 rounded-xl px-3 py-3 space-y-2" data-order="${oid}">
+      <p class="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+        ${icon("warehouse", 15)}ลานเทไม่ตอบ — มีปาล์มที่ลานไหม?
+      </p>
+      <div class="flex gap-2">
+        <button onclick="event.stopPropagation(); approveRamp('${oid}','มีปาล์ม', this)"
+          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors">
+          ${icon("check", 15)}มีปาล์ม
+        </button>
+        <button onclick="event.stopPropagation(); approveRamp('${oid}','ไม่มีปาล์ม', this)"
+          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-amber-300 text-amber-800 text-sm font-semibold hover:bg-amber-50 transition-colors">
+          ${icon("x", 15)}ไม่มีปาล์ม
+        </button>
+      </div>
+    </div>`;
+}
+
 function orderCardHtml(order, idx, isAdmin) {
   const expanded = EXPANDED_IDS.has(order.orderId);
   const ownerStyle = OWNER_TYPE_STYLES[order.ownerType];
@@ -319,6 +341,7 @@ function orderCardHtml(order, idx, isAdmin) {
         </div>
         ${driverHtml}
         ${rampHtml}
+        ${rampApproveHtml(order, isAdmin)}
       </div>`;
   }
 
@@ -613,6 +636,38 @@ async function loadOrders(isRefresh) {
     }
   } finally {
     if (isRefresh && btn) setTimeout(() => btn.querySelector('.refresh-icon').classList.remove('spin'), 400);
+  }
+}
+
+// ── ตอบแทนลานเท (มีปาล์ม/ไม่มีปาล์ม) จากหน้า tracker ──────────
+async function approveRamp(orderId, answer, btn) {
+  if (!confirm(`ยืนยันตอบแทนลานเท: "${answer}" ?`)) return;
+  const wrap = btn.closest('.ramp-approve');
+  wrap.querySelectorAll('button').forEach(b => b.disabled = true);
+  btn.innerHTML = 'กำลังบันทึก...';
+
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // กัน CORS preflight ของ GAS
+      body: JSON.stringify({
+        action: 'adminApproveRamp',
+        orderId: orderId,
+        answer:  answer,
+        userId:  window._userId
+      })
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      wrap.innerHTML = `<p class="text-sm font-semibold text-emerald-700 flex items-center gap-1.5">${icon("check", 15)}บันทึก "${escapeHtml(answer)}" และกระจายงานให้คนขับแล้ว</p>`;
+      setTimeout(() => loadOrders(true), 1200); // โหลดใหม่ ให้สถานะอัปเดต
+    } else {
+      alert('ไม่สำเร็จ: ' + ((data && data.error) || 'unknown'));
+      render(); // คืนปุ่มกลับ
+    }
+  } catch (e) {
+    alert('เกิดข้อผิดพลาด: ' + (e.message || e));
+    render();
   }
 }
 
